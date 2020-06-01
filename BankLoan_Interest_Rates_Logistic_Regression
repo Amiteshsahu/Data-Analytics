@@ -1,0 +1,196 @@
+---
+title: "Hackathon-Loan"
+author: "Amitesh"
+date: "30/05/2020"
+output: html_document
+---
+
+```{r}
+library(stringr)
+library(dplyr)
+library(corrplot)
+library(caret)
+options(scipen = 999)
+library(PerformanceAnalytics)
+library(mice)
+library(VIM)
+```
+
+```{r}
+loan=read.csv("Z:/Hackathon/Loan.csv",na.strings = c("", "NA"))
+sapply(loan,function(x) sum(is.na(x)))
+p <- function(x) {sum(is.na(x))/length(x)*100}
+apply(loan, 2, p)
+loan$Loan_Amount_Requested=as.numeric(loan$Loan_Amount_Requested)
+loan$Length_Employed=as.numeric(loan$Length_Employed)
+loan$Loan_ID=NULL
+#loan$Months_Since_Deliquency=NULL
+str(loan)
+attach(loan)
+```
+
+Converting to Factor Variables
+```{r}
+loan$Interest_Rate=factor(loan$Interest_Rate)
+loan$Interest_Rate=relevel(loan$Interest_Rate,ref = "1")
+levels(loan$Home_Owner)
+loan$Home_Owner=factor(loan$Home_Owner,levels = c("Mortgage","None","Other","Own","Rent" ),labels = c(0,1,2,3,4))
+loan$Home_Owner=as.numeric(loan$Home_Owner)
+#loan$Interest_Rate=factor(loan$Interest_Rate,levels = c("Category 1","Category 2","Category 3"),labels = c(1,2,3))
+```
+
+Cleaning the data
+
+Impute mssing values
+
+```{r}
+attach(loan)
+levels(loan$Length_Employed)
+levels(Home_Owner)
+levels(Purpose_Of_Loan)
+summary(loan)
+str(loan)
+#md.pattern(loan)
+#md.pairs(loan)
+
+loan$Annual_Income=ifelse(is.na(loan$Annual_Income),
+                                  ave(loan$Annual_Income,FUN = function(x)mean(x,na.rm =
+                                                      TRUE)),loan$Annual_Income)
+loan$Length_Employed=ifelse(is.na(loan$Length_Employed),
+                                  ave(loan$Length_Employed,FUN = function(x)mean(x,na.rm =
+                                                      TRUE)),loan$Length_Employed)
+loan$Months_Since_Deliquency=ifelse(is.na(loan$Months_Since_Deliquency),
+                                  ave(loan$Months_Since_Deliquency,FUN = function(x)mean(x,na.rm =
+                                                      TRUE)),loan$Months_Since_Deliquency)
+loan$Home_Owner=ifelse(is.na(loan$Home_Owner),NA %in% 1,loan$Home_Owner)
+
+```
+Prediction Logistic
+
+```{r}
+#Logistic Regression model 1
+library(car)
+#install.packages("nnet")
+library(nnet)
+set.seed(1)
+lgmodel <- multinom(formula= Interest_Rate ~.,loan)#, family = binomial(link = "logit"))
+summary(lgmodel)
+vif(lgmodel)
+names(loan)
+```
+
+```{r}
+lgmodel=glm(formula= Interest_Rate ~.,loan[-1], family = binomial(link = "logit"))
+summary(lgmodel)
+vif(lgmodel)
+```
+```{r}
+lgmodel=glm(formula= Interest_Rate ~.,loan[c(-1,-11)], family = binomial(link = "logit"))
+summary(lgmodel)
+vif(lgmodel)
+```
+```{r}
+finalmodel=multinom(formula= Interest_Rate ~.,loan[c(-1,-9,-12)])#, family = binomial(link = "logit"))
+summary(finalmodel)
+vif(finalmodel)
+names(loan)
+cm2=table(predict(glmmodel),loan$Interest_Rate)
+print(cm2)
+1-sum(diag(cm2)/sum(cm2))
+```
+
+Test Data
+```{r}
+test_loan=read.csv("Z:/Hackathon/test_loan.csv",na.strings = c("", "NA"))
+
+str(test_loan)
+test_loan$Loan_Amount_Requested=as.numeric(test_loan$Loan_Amount_Requested)
+test_loan$Length_Employed=as.numeric(test_loan$Length_Employed)
+test_loan$Home_Owner=factor(test_loan$Home_Owner,levels = c("Mortgage","None","Other","Own","Rent" ),labels = c(0,1,2,3,4))
+#test_loan$Months_Since_Deliquency=NULL
+test_loan$Annual_Income=ifelse(is.na(test_loan$Annual_Income),
+                                  ave(test_loan$Annual_Income,FUN = function(x)mean(x,na.rm =
+                                                      TRUE)),test_loan$Annual_Income)
+test_loan$Length_Employed=ifelse(is.na(test_loan$Length_Employed),
+                                  ave(test_loan$Length_Employed,FUN = function(x)mean(x,na.rm =
+                                                      TRUE)),test_loan$Length_Employed)
+test_loan$Months_Since_Deliquency=ifelse(is.na(test_loan$Months_Since_Deliquency),
+                                  ave(test_loan$Months_Since_Deliquency,FUN = function(x)mean(x,na.rm =
+                                                      TRUE)),test_loan$Months_Since_Deliquency)
+test_loan$Home_Owner=ifelse(is.na(test_loan$Home_Owner),NA %in% 1,test_loan$Home_Owner)
+```
+
+### Prediction for test data using the final model
+```{r}
+test_loan$Interest_Rate=predict(finalmodel,test_loan)
+?predict.glm
+#lg_predictions <- predict(finalmodel,test_loan,type="probs")
+#lg_predictions
+#test_loan$Interest_Rate<-predict(finalmodel, newdata=test_loan, type="probs")
+View(test_loan)
+
+cm=table(predict(lgmodel),loan$Interest_Rate)
+print(cm)
+1-sum(diag(cm)/sum(cm))
+
+final=test_loan[,c(1,14)]
+names(test_loan)
+View(final)
+str(test_loan)
+write.table(final,file = "Z:/Hackathon/submission4.csv",sep = ",")
+```
+
+# Naive Bayes
+```{r}
+library(e1071)
+set.seed(1)
+nbmodel <- naiveBayes(Interest_Rate ~., data=loan)
+nbmodel
+#This gives us the rule or factors which can help us employees decision to use car or not.
+#(These are summarized at the end)
+
+#General way to interpret this output 
+#For continuous variables for example distance we can say 2-wheeler or public Transport is used by people for whom 
+#commute distance is 10.6 with sd of 3.06
+test_loan$nb_predictions <-predict(nbmodel,test_loan)
+View(test_loan)
+names(test_loan)
+naiveb=test_loan[,c(1,14)]
+write.table(naiveb,file = "Z:/Hackathon/naivebayes.csv",sep = ",")
+```
+
+KNN Model
+```{r}
+library(class)
+library(caret)
+trControl <- trainControl(method  = "cv", number  = 10)
+knnmod <- caret::train(Interest_Rate ~ .,
+                       method     = "knn",
+                       tuneGrid   = expand.grid(k = 2:20),
+                       trControl  = trControl,
+                       metric     = "Accuracy",
+                       preProcess = c("center","scale"),
+                       data       = loan)
+
+knnmod
+test_loan$knn_predictions <- predict(knnmod,test_loan)
+```
+
+
+
+```{r}
+test_loan$pred<-predict.lm(model1, newdata=test_loan)
+confusionMatrix(nb_predictions,test_loan$pred)
+final=test_loan[,c(1,13)]
+names(test_loan)
+View(final)
+str(test_loan)
+write.table(final,file = "Z:/Hackathon/submission2.csv",sep = ",")
+#test_loan$Home_Owner=as.numeric(test_loan$Home_Owner)
+#test.data <- predict(step.model2,test_loan)
+#test.data <- data.frame("pred"=test.data)
+#colnames(test.data)="pred"
+#str(test.data)
+#head(test_loan)
+#range(test.data$pred)
+```
